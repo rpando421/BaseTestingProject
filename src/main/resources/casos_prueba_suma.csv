@@ -1,0 +1,4 @@
+numero_1,numero_2,valor_esperado,descripcion_caso
+100,200,300,Suma uno
+14,7,21,Suma dos
+-9,+3,-6,Con signos
