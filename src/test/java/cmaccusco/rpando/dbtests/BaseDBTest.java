@@ -78,6 +78,13 @@ public abstract class BaseDBTest {
     }
 
     @AfterAll
+    static void closeConnection() {
+        if (dataSource != null) {
+            dataSource.close();
+        }
+    }
+
+    // @AfterAll
     static void generarReporteExcel() {
         System.out.println("Generando reporte plano por columnas en Excel...");
         String rutaArchivo = "target/Reporte_Cobertura_Tabular.xlsx";

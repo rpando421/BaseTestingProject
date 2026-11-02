@@ -12,7 +12,6 @@ public class TestSuma extends BaseDBTest {
     @CsvFileSource(resources = "/casos_prueba_suma.csv", numLinesToSkip = 1)
     void test_TestSencillo(int numero1, int numero2, int suma, String descripcionCaso) throws SQLException {
         String estadoTest = "FAILED";
-        String parametrosFormateados = "Numero 1: " + numero1 + ", Numero 2: " + numero2;
         int valorCalculado = 0;
 
         try {
