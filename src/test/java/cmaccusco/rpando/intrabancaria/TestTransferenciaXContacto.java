@@ -1,8 +1,12 @@
 package cmaccusco.rpando.intrabancaria;
 
-import cmaccusco.rpando.framework.db.EjecutorSql;
+import cmaccusco.rpando.datos.dbcmac.CaptacAhorros;
+import cmaccusco.rpando.datos.dbcmac.CaptacAhorrosRepositorio;
+import cmaccusco.rpando.datos.dbcmac.Producto;
+import cmaccusco.rpando.datos.dbcmac.ProductoRepositorio;
 import cmaccusco.rpando.framework.prueba.BaseDBTest;
 import cmaccusco.rpando.framework.prueba.CasoPrueba;
+import cmaccusco.rpando.intrabancaria.sp.RegistraTransferenciaContacto;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 
@@ -11,62 +15,46 @@ import java.math.BigDecimal;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pruebas de {@code dbo.spu_App_RegistraTransferenciaContacto}
- * (fuente: src/main/resources/sql/03_spu_App_RegistraTransferenciaContacto.sql).
+ * Pruebas de {@code dbo.spu_App_RegistraTransferenciaContacto}.
+ * Esta clase no contiene SQL: las consultas están en {@code datos.dbcmac.*Repositorio}
+ * y la llamada al SP en {@link RegistraTransferenciaContacto}.
  */
 class TestTransferenciaXContacto extends BaseDBTest {
 
     private static final String CSV = "/matriz_pruebas/intrabancaria/transferencia_x_contacto_regular.csv";
 
-    private static final String SQL_SALDO =
-            "SELECT nSaldo FROM DBCMAC..Producto WITH(NOLOCK) WHERE cCtaCod = ?;";
-    private static final String SQL_RETENCION =
-            "SELECT nRetencion FROM DBCMAC..CaptacAhorros WITH(NOLOCK) WHERE cCtaCod = ?;";
-
-    private static final String SP_SIN_OFFHOST =
-            "{call spu_App_RegistraTransferenciaContacto(?,?,?,?,?,?,?,?,?,?)}";
-    private static final String SP_CON_OFFHOST =
-            "{call spu_App_RegistraTransferenciaContacto(?,?,?,?,?,?,?,?,?,?,?)}";
-
     @ParameterizedTest(name = "[{index}] - {5}")
     @CsvFileSource(resources = CSV, numLinesToSkip = 1)
     void test_NoOffHost(String dniOrigen, String ctaCodOrigen, String dniDestino, String ctaCodDestino,
                         BigDecimal monto, String descripcion) throws Exception {
+        ProductoRepositorio productos = new ProductoRepositorio(sql);
+
         new CasoPrueba(getClass(), "NoOffHost", descripcion) {
-            BigDecimal saldoAntes;
-            BigDecimal saldoDespues;
+            Producto destinoAntes;
+            Producto destinoDespues;
             String respuesta;
 
             @Override
             protected void arrange() throws Exception {
-                saldoAntes = saldo(sql, ctaCodDestino);
+                destinoAntes = productos.obtener(ctaCodDestino);
             }
 
             @Override
             protected void act() throws Exception {
-                respuesta = sql.ejecutarSp(SP_SIN_OFFHOST, cstmt -> {
-                    cstmt.setInt(1, 1);
-                    cstmt.setString(2, dniOrigen);
-                    cstmt.setString(3, "91");
-                    cstmt.setDate(4, null);
-                    cstmt.setString(5, "APP1");
-                    cstmt.setString(6, dniDestino);
-                    cstmt.setString(7, ctaCodDestino);
-                    cstmt.setString(8, ctaCodOrigen);
-                    cstmt.setInt(9, 1);
-                    cstmt.setBigDecimal(10, monto);
-                }, "cRespuesta");
+                respuesta = RegistraTransferenciaContacto
+                        .de(dniOrigen, ctaCodOrigen, dniDestino, ctaCodDestino, monto)
+                        .ejecutar(sql);
             }
 
             @Override
             protected void assertar() throws Exception {
-                saldoDespues = saldo(sql, ctaCodDestino);
+                destinoDespues = productos.obtener(ctaCodDestino);
 
                 // TODO revisar: se conserva la lógica original ("80" y saldo sin cambios)
                 verificar("Respuesta SP", "80", respuesta,
                         () -> assertThat(respuesta).isEqualTo("80"));
-                verificar("Saldo destino", saldoAntes, saldoDespues,
-                        () -> assertThat(saldoAntes).isEqualByComparingTo(saldoDespues));
+                verificar("Saldo destino", destinoAntes.nSaldo(), destinoDespues.nSaldo(),
+                        () -> assertThat(destinoAntes.nSaldo()).isEqualByComparingTo(destinoDespues.nSaldo()));
                 // TODO: validar retiro en cuenta origen
             }
         }
@@ -82,6 +70,9 @@ class TestTransferenciaXContacto extends BaseDBTest {
     @CsvFileSource(resources = CSV, numLinesToSkip = 1)
     void test_OffHost(String dniOrigen, String ctaCodOrigen, String dniDestino, String ctaCodDestino,
                       BigDecimal monto, String descripcion) throws Exception {
+        ProductoRepositorio productos = new ProductoRepositorio(sql);
+        CaptacAhorrosRepositorio ahorros = new CaptacAhorrosRepositorio(sql);
+
         new CasoPrueba(getClass(), "OffHost", descripcion) {
             BigDecimal saldo;
             BigDecimal retencion;
@@ -89,25 +80,18 @@ class TestTransferenciaXContacto extends BaseDBTest {
 
             @Override
             protected void act() throws Exception {
-                respuesta = sql.ejecutarSp(SP_CON_OFFHOST, cstmt -> {
-                    cstmt.setInt(1, 1);
-                    cstmt.setString(2, dniOrigen);
-                    cstmt.setString(3, "91");
-                    cstmt.setDate(4, null);
-                    cstmt.setString(5, "APP1");
-                    cstmt.setString(6, dniDestino);
-                    cstmt.setString(7, ctaCodDestino);
-                    cstmt.setString(8, ctaCodOrigen);
-                    cstmt.setInt(9, 1);
-                    cstmt.setBigDecimal(10, monto);
-                    cstmt.setBoolean(11, true);
-                }, "cRespuesta");
+                respuesta = RegistraTransferenciaContacto
+                        .de(dniOrigen, ctaCodOrigen, dniDestino, ctaCodDestino, monto)
+                        .conOffHost()
+                        .ejecutar(sql);
             }
 
             @Override
             protected void assertar() throws Exception {
-                saldo = saldo(sql, ctaCodDestino);
-                retencion = sql.consultarValor(SQL_RETENCION, "nRetencion", BigDecimal.class, BigDecimal.ZERO, ctaCodDestino);
+                saldo = productos.obtener(ctaCodDestino).nSaldo();
+                retencion = ahorros.porCuenta(ctaCodDestino)
+                        .map(CaptacAhorros::nRetencion)
+                        .orElse(BigDecimal.ZERO);
 
                 verificar("Respuesta SP", "00", respuesta,
                         () -> assertThat(respuesta).isEqualTo("00"));
@@ -123,9 +107,5 @@ class TestTransferenciaXContacto extends BaseDBTest {
                 .parametro("Cuenta destino", ctaCodDestino)
                 .parametro("Monto", monto)
                 .ejecutar();
-    }
-
-    private static BigDecimal saldo(EjecutorSql sql, String ctaCod) throws Exception {
-        return sql.consultarValor(SQL_SALDO, "nSaldo", BigDecimal.class, BigDecimal.ZERO, ctaCod);
     }
 }
