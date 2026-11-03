@@ -3,6 +3,12 @@ package cmaccusco.rpando.framework.prueba;
 import cmaccusco.rpando.framework.reporte.CasoReporte;
 import cmaccusco.rpando.framework.reporte.RegistroReporte;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Esqueleto de un caso de prueba (una fila del CSV).
  * <p>
@@ -25,6 +31,7 @@ public abstract class CasoPrueba {
 
     private final Class<?> clasePrueba;
     private final CasoReporte.Builder reporte;
+    private final List<String> fallos = new ArrayList<>();
 
     protected CasoPrueba(Class<?> clasePrueba, String escenario, String descripcion) {
         this.clasePrueba = clasePrueba;
@@ -48,11 +55,55 @@ public abstract class CasoPrueba {
 
     /**
      * Anota en el reporte lo esperado vs. lo obtenido y ejecuta la aserción.
-     * Si la aserción falla, el caso queda FAILED con el mensaje de error.
+     * <p>
+     * Verificación <b>suave</b>: si la aserción falla se guarda el error y se continúa con
+     * las siguientes, así el reporte muestra todos los campos. Al terminar ASSERT, si hubo
+     * fallos, el caso queda FAILED con todos los mensajes.
      */
     protected final void verificar(String nombre, Object esperado, Object real, Runnable asercion) {
         reporte.verificacion(nombre, esperado, real);
-        asercion.run();
+        try {
+            asercion.run();
+        } catch (AssertionError e) {
+            String mensaje = e.getMessage() != null ? e.getMessage().replaceAll("\\s+", " ").trim() : "falló";
+            fallos.add(nombre + ": " + mensaje);
+        }
+    }
+
+    /**
+     * Compara {@code esperado} con {@code real}. Si {@code esperado} es null o vacío
+     * (celda vacía en el CSV) la verificación se omite.
+     * Si alguno es numérico se compara por valor ({@code "20"} == {@code 20.00});
+     * si ambos son texto se comparan como texto ({@code "00"} != {@code "0"}).
+     */
+    protected final void verificarIgual(String nombre, Object esperado, Object real) {
+        if (esperado == null || esperado.toString().isBlank()) {
+            return;
+        }
+        verificar(nombre, esperado, real, () -> {
+            // Solo se compara como número si uno de los dos ya es numérico (p.ej. saldo BigDecimal).
+            // Dos textos se comparan como texto: el código "00" no es igual a "0".
+            boolean hayNumero = esperado instanceof Number || real instanceof Number;
+            BigDecimal esperadoNum = hayNumero ? comoNumero(esperado) : null;
+            BigDecimal realNum = hayNumero ? comoNumero(real) : null;
+            if (esperadoNum != null && realNum != null) {
+                assertThat(realNum).as(nombre).isEqualByComparingTo(esperadoNum);
+            } else {
+                assertThat(real != null ? real.toString().trim() : null).as(nombre)
+                        .isEqualTo(esperado.toString().trim());
+            }
+        });
+    }
+
+    private static BigDecimal comoNumero(Object valor) {
+        if (valor == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(valor.toString().trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** Método plantilla: no se sobrescribe. */
@@ -61,6 +112,9 @@ public abstract class CasoPrueba {
             arrange();
             act();
             assertar();
+            if (!fallos.isEmpty()) {
+                throw new AssertionError(String.join(" | ", fallos));
+            }
             reporte.exitoso();
         } catch (Exception | AssertionError e) {
             reporte.fallido(e);

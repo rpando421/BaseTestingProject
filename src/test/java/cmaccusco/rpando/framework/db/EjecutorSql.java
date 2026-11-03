@@ -18,7 +18,7 @@ import java.util.Optional;
  */
 public class EjecutorSql {
 
-    /** Asigna los parámetros de una llamada a procedimiento almacenado. */
+    /** Asigna los parámetros (y registra los OUTPUT) de una llamada a procedimiento almacenado. */
     @FunctionalInterface
     public interface Parametros {
         void asignar(CallableStatement cstmt) throws SQLException;
@@ -30,20 +30,15 @@ public class EjecutorSql {
         this.conn = conn;
     }
 
+    // ---------------------------------------------------------------- SELECT
+
     /**
      * Ejecuta un SELECT y devuelve el valor de {@code columna} en la primera fila,
      * o {@code valorPorDefecto} si no hay filas.
      */
     public <T> T consultarValor(String sql, String columna, Class<T> tipo, T valorPorDefecto, Object... params)
             throws SQLException {
-        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-            for (int i = 0; i < params.length; i++) {
-                stmt.setObject(i + 1, params[i]);
-            }
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next() ? rs.getObject(columna, tipo) : valorPorDefecto;
-            }
-        }
+        return consultarUno(sql, rs -> rs.getObject(columna, tipo), params).orElse(valorPorDefecto);
     }
 
     /**
@@ -71,16 +66,57 @@ public class EjecutorSql {
         }
     }
 
+    // ---------------------------------------------------------------- SP
+
     /**
-     * Ejecuta un procedimiento almacenado y devuelve el valor de {@code columnaRespuesta}
-     * en la primera fila del primer result set, o {@code null} si no devuelve filas.
+     * Ejecuta un SP y devuelve el valor de {@code columnaRespuesta} en la primera fila
+     * del primer result set, o {@code null} si no devuelve filas.
      */
     public String ejecutarSp(String llamada, Parametros parametros, String columnaRespuesta) throws SQLException {
+        return ejecutarSp(llamada, parametros, rs -> rs.getString(columnaRespuesta)).orElse(null);
+    }
+
+    /**
+     * Ejecuta un SP y convierte la primera fila de su primer result set (todas las columnas
+     * que el mapeador necesite). Ignora los "update counts" previos que SQL Server envía
+     * cuando el SP no tiene {@code SET NOCOUNT ON}.
+     */
+    public <T> Optional<T> ejecutarSp(String llamada, Parametros parametros, MapeadorFila<T> mapeador)
+            throws SQLException {
         try (CallableStatement cstmt = conn.prepareCall(llamada)) {
             parametros.asignar(cstmt);
-            try (ResultSet rs = cstmt.executeQuery()) {
-                return rs.next() ? rs.getString(columnaRespuesta) : null;
+            boolean esResultSet = cstmt.execute();
+            while (true) {
+                if (esResultSet) {
+                    try (ResultSet rs = cstmt.getResultSet()) {
+                        return rs.next() ? Optional.of(mapeador.mapear(rs)) : Optional.empty();
+                    }
+                }
+                if (cstmt.getUpdateCount() == -1) {
+                    return Optional.empty();
+                }
+                esResultSet = cstmt.getMoreResults();
             }
+        }
+    }
+
+    /**
+     * Ejecuta un SP y lee sus parámetros OUTPUT con {@code lector}.
+     * Antes de leerlos consume todos los result sets y update counts, porque SQL Server
+     * solo entrega los valores OUTPUT al final del flujo de resultados.
+     */
+    public <T> T ejecutarSpConSalida(String llamada, Parametros parametros, LectorSalida<T> lector)
+            throws SQLException {
+        try (CallableStatement cstmt = conn.prepareCall(llamada)) {
+            parametros.asignar(cstmt);
+            boolean esResultSet = cstmt.execute();
+            while (esResultSet || cstmt.getUpdateCount() != -1) {
+                if (esResultSet) {
+                    cstmt.getResultSet().close();
+                }
+                esResultSet = cstmt.getMoreResults();
+            }
+            return lector.leer(cstmt);
         }
     }
 }

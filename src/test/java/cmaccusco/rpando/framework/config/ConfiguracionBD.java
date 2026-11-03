@@ -38,12 +38,14 @@ public final class ConfiguracionBD {
         }
     }
 
-    private static final class Holder {
-        private static final ConfiguracionBD INSTANCIA = new ConfiguracionBD();
-    }
+    private static ConfiguracionBD instancia;
 
-    public static ConfiguracionBD instancia() {
-        return Holder.INSTANCIA;
+    /** Si la configuración está incompleta lanza el error en cada llamada (mensaje claro siempre). */
+    public static synchronized ConfiguracionBD instancia() {
+        if (instancia == null) {
+            instancia = new ConfiguracionBD();
+        }
+        return instancia;
     }
 
     private static Properties cargarArchivo() {

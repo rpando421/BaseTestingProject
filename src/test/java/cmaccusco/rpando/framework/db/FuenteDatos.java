@@ -30,12 +30,18 @@ public final class FuenteDatos {
         Runtime.getRuntime().addShutdownHook(new Thread(dataSource::close));
     }
 
-    private static final class Holder {
-        private static final FuenteDatos INSTANCIA = new FuenteDatos();
-    }
+    private static FuenteDatos instancia;
 
-    public static FuenteDatos instancia() {
-        return Holder.INSTANCIA;
+    /**
+     * Inicialización perezosa sincronizada (no se usa el idiom "Holder": si la configuración
+     * falla, el Holder deja la clase inutilizable y las siguientes pruebas verían
+     * NoClassDefFoundError en lugar del mensaje real).
+     */
+    public static synchronized FuenteDatos instancia() {
+        if (instancia == null) {
+            instancia = new FuenteDatos();
+        }
+        return instancia;
     }
 
     /** Devuelve una conexión con autocommit desactivado (las pruebas siempre hacen rollback). */

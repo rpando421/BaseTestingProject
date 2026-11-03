@@ -70,8 +70,8 @@ public final class RegistraTransferenciaContacto {
         return this;
     }
 
-    /** Ejecuta el SP y devuelve {@code cRespuesta}. */
-    public String ejecutar(EjecutorSql sql) throws SQLException {
+    /** Ejecuta el SP y devuelve todos los campos de su SELECT final. */
+    public RespuestaTransferencia ejecutar(EjecutorSql sql) throws SQLException {
         String llamada = offHost != null ? SP_CON_OFFHOST : SP_SIN_OFFHOST;
         return sql.ejecutarSp(llamada, cstmt -> {
             cstmt.setInt(1, tipoIdOrigen);
@@ -87,6 +87,6 @@ public final class RegistraTransferenciaContacto {
             if (offHost != null) {
                 cstmt.setBoolean(11, offHost);
             }
-        }, "cRespuesta");
+        }, RespuestaTransferencia.MAPEADOR).orElse(RespuestaTransferencia.VACIA);
     }
 }

@@ -7,6 +7,7 @@ import cmaccusco.rpando.datos.dbcmac.ProductoRepositorio;
 import cmaccusco.rpando.framework.prueba.BaseDBTest;
 import cmaccusco.rpando.framework.prueba.CasoPrueba;
 import cmaccusco.rpando.intrabancaria.sp.RegistraTransferenciaContacto;
+import cmaccusco.rpando.intrabancaria.sp.RespuestaTransferencia;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 
@@ -22,6 +23,42 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TestTransferenciaXContacto extends BaseDBTest {
 
     private static final String CSV = "/matriz_pruebas/intrabancaria/transferencia_x_contacto_regular.csv";
+    private static final String CSV_RESPUESTA = "/matriz_pruebas/intrabancaria/transferencia_x_contacto_respuesta.csv";
+
+    /**
+     * Caso: el SP devuelve un SELECT y se validan varios de sus campos.
+     * Los valores esperados vienen del CSV; una celda vacía significa "no validar".
+     */
+    @ParameterizedTest(name = "[{index}] - {8}")
+    @CsvFileSource(resources = CSV_RESPUESTA, numLinesToSkip = 1)
+    void test_RespuestaSp(String dniOrigen, String ctaCodOrigen, String dniDestino, String ctaCodDestino,
+                          BigDecimal monto, String respuestaEsperada, String mensajeEsperado,
+                          String entidadEsperada, String descripcion) throws Exception {
+        new CasoPrueba(getClass(), "RespuestaSp", descripcion) {
+            RespuestaTransferencia r;
+
+            @Override
+            protected void act() throws Exception {
+                r = RegistraTransferenciaContacto
+                        .de(dniOrigen, ctaCodOrigen, dniDestino, ctaCodDestino, monto)
+                        .ejecutar(sql);
+            }
+
+            @Override
+            protected void assertar() {
+                verificarIgual("Respuesta", respuestaEsperada, r.cRespuesta());
+                verificarIgual("Mensaje", mensajeEsperado, r.cMensaje());
+                verificarIgual("Entidad", entidadEsperada, r.cNomEntidad());
+                verificarIgual("Cuenta origen devuelta", ctaCodOrigen, r.cCtaCodOrigen());
+            }
+        }
+                .parametro("DNI origen", dniOrigen)
+                .parametro("Cuenta origen", ctaCodOrigen)
+                .parametro("DNI destino", dniDestino)
+                .parametro("Cuenta destino", ctaCodDestino)
+                .parametro("Monto", monto)
+                .ejecutar();
+    }
 
     @ParameterizedTest(name = "[{index}] - {5}")
     @CsvFileSource(resources = CSV, numLinesToSkip = 1)
@@ -43,7 +80,8 @@ class TestTransferenciaXContacto extends BaseDBTest {
             protected void act() throws Exception {
                 respuesta = RegistraTransferenciaContacto
                         .de(dniOrigen, ctaCodOrigen, dniDestino, ctaCodDestino, monto)
-                        .ejecutar(sql);
+                        .ejecutar(sql)
+                        .cRespuesta();
             }
 
             @Override
@@ -83,7 +121,8 @@ class TestTransferenciaXContacto extends BaseDBTest {
                 respuesta = RegistraTransferenciaContacto
                         .de(dniOrigen, ctaCodOrigen, dniDestino, ctaCodDestino, monto)
                         .conOffHost()
-                        .ejecutar(sql);
+                        .ejecutar(sql)
+                        .cRespuesta();
             }
 
             @Override
