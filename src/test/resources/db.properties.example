@@ -1,0 +1,7 @@
+# Copie este archivo como db.properties (está en .gitignore) y complete los valores.
+# También puede usar variables de entorno: DB_URL, DB_USER, DB_PASSWORD, DB_POOL_SIZE.
+# IMPORTANTE (CLAUDE.md): no apuntar a una base de datos real/productiva.
+db.url=jdbc:sqlserver://<servidor>;databaseName=<base_de_datos>;encrypt=false;trustServerCertificate=true;
+db.user=<usuario>
+db.password=<clave>
+db.pool.size=5

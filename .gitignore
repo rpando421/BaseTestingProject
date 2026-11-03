@@ -36,3 +36,9 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+plans/
+### Configuración local de BD (credenciales) ###
+src/test/resources/db.properties
+
+CLAUDE.md
