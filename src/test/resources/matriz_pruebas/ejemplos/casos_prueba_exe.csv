@@ -1,0 +1,4 @@
+texto,archivo,codigo_salida_esperado,salida_esperada,descripcion
+ACTIVA,archivo_busqueda.txt,0,CUENTA 1061 ACTIVA,Texto encontrado
+NOEXISTE,archivo_busqueda.txt,1,,Texto no encontrado
+activa,archivo_busqueda.txt,1,,Distingue mayusculas y minusculas

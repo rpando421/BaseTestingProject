@@ -59,6 +59,7 @@ src/
     │   │   ├── config/ConfiguracionBD       ← lee db.properties / variables de entorno
     │   │   ├── db/EjecutorSql               ← ejecuta SELECTs y SPs
     │   │   ├── db/MapeadorFila, LectorSalida
+    │   │   ├── proceso/EjecutorProceso      ← ejecuta programas externos (.exe)
     │   │   ├── prueba/BaseDBTest            ← conexión + rollback + reporte
     │   │   ├── prueba/CasoPrueba            ← plantilla ARRANGE/ACT/ASSERT
     │   │   └── reporte/                     ← generación del Excel
@@ -77,6 +78,7 @@ Ejemplos de referencia ya implementados:
 | Caso | Prueba | SP (Command) | CSV |
 |---|---|---|---|
 | Sin BD (flujo básico) | `ejemplos/TestSuma` | — | `matriz_pruebas/ejemplos/casos_prueba_suma.csv` |
+| ACT ejecuta un **.exe** (sin BD, solo Windows) | `ejemplos/TestBuscarTexto` | `ejemplos/exe/BuscarTexto` | `matriz_pruebas/ejemplos/casos_prueba_exe.csv` |
 | SP que devuelve un **SELECT** | `intrabancaria/TestTransferenciaXContacto#test_RespuestaSp` | `intrabancaria/sp/RegistraTransferenciaContacto` | `matriz_pruebas/intrabancaria/transferencia_x_contacto_respuesta.csv` |
 | SP + validación de **otras tablas** | `intrabancaria/TestTransferenciaXContacto#test_NoOffHost` | idem | `matriz_pruebas/intrabancaria/transferencia_x_contacto_regular.csv` |
 | SP con parámetros **OUTPUT** | `offhost/TestInicioOffHostDia` | `offhost/sp/InicioOffHostDia` | `matriz_pruebas/offhost/inicio_offhost_dia.csv` |
@@ -89,8 +91,8 @@ Ejemplos de referencia ya implementados:
 |---|---|---|---|
 | Singleton | Creacional | `ConfiguracionBD`, `FuenteDatos` | Una sola configuración y un solo pool de conexiones |
 | Builder | Creacional | `CasoReporte.Builder` | Armar paso a paso el resultado de un caso |
-| Facade | Estructural | `EjecutorSql` | Ocultar JDBC: un SELECT o un SP en una línea |
-| Command | Comportamiento | clases en `<modulo>/sp/` | Encapsular un SP y sus parámetros; si cambia la firma solo se toca esa clase |
+| Facade | Estructural | `EjecutorSql`, `EjecutorProceso` | Ocultar JDBC y `ProcessBuilder`: un SELECT, un SP o un exe en una línea |
+| Command | Comportamiento | clases en `<modulo>/sp/` y `<modulo>/exe/` | Encapsular un SP o un exe y sus parámetros; si cambia la firma solo se toca esa clase |
 | Template Method | Comportamiento | `CasoPrueba` | Fijar el orden ARRANGE → ACT → ASSERT y registrar siempre el resultado |
 | Strategy | Comportamiento | `MapeadorFila`, `LectorSalida`, `EscritorReporte` | Cómo convertir una fila, leer OUTPUTs o escribir el reporte |
 | Observer | Comportamiento | `ExtensionReporte` | Escribir el Excel al terminar cada clase de prueba |
@@ -276,6 +278,35 @@ Puntos clave:
 - `arrange()` es opcional; `act()` y `assertar()` son obligatorios.
 - **No escriba SQL en la clase de prueba**: los SP van en `sp/` y los SELECT en `datos/`.
 - Siempre termine con `.ejecutar()`; sin eso el caso no corre ni se reporta.
+
+### Variante: ACT ejecuta un .exe
+
+Si la acción bajo prueba es un programa externo, encapsúlelo en un Command dentro de `<modulo>/exe/` y ejecútelo con `EjecutorProceso`. El ejemplo completo está en `ejemplos/TestBuscarTexto`, que corre `findstr.exe <texto> <archivo>`:
+
+```java
+// ejemplos/exe/BuscarTexto.java
+public ResultadoProceso ejecutar(EjecutorProceso proceso)
+        throws IOException, InterruptedException, TimeoutException {
+    return proceso.ejecutar("findstr.exe", texto, archivo.toString());
+}
+
+// ejemplos/TestBuscarTexto.java
+protected void act() throws Exception {
+    r = BuscarTexto.de(texto, ruta).ejecutar(proceso);
+}
+
+protected void assertar() {
+    verificarIgual("Codigo de salida", codigoSalidaEsperado, r.codigoSalida());
+    verificarIgual("Salida", salidaEsperada, r.salida());
+}
+```
+
+- `ResultadoProceso` trae `codigoSalida()` y `salida()` (stdout y stderr juntos).
+- Un código de salida distinto de 0 **no lanza excepción**: se valida en `assertar()`.
+- Si el exe no existe (`IOException`) o supera el tiempo límite (`TimeoutException`, 30 s por defecto; use `new EjecutorProceso(Duration.ofMinutes(5))` para cambiarlo), el caso queda `FAILED`.
+- Los argumentos se pasan sin shell: `|`, `&` o `>` llegan como texto literal.
+
+> ⚠️ **El exe corre en otro proceso y con su propia conexión.** El rollback de `BaseDBTest` **no deshace** lo que escriba en la base. Además, el exe no ve los datos sin confirmar de la conexión de la prueba, y puede quedar bloqueado esperándolos hasta el tiempo límite si el `arrange()` modificó esas filas.
 
 ---
 
@@ -505,7 +536,7 @@ También puede ejecutarlas desde el IDE. Al final de cada clase verá en consola
 Reporte generado: C:\...\target\reportes\TestTransferenciaXContacto_20261103_101500.xlsx
 ```
 
-`TestSuma` y `CasoPruebaTest` no usan base de datos; sirven para comprobar que el entorno y el reporte funcionan.
+`TestSuma`, `CasoPruebaTest`, `TestBuscarTexto` y `EjecutorProcesoTest` no usan base de datos; sirven para comprobar que el entorno y el reporte funcionan. Los dos últimos solo corren en Windows.
 
 ---
 
